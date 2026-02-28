@@ -98,7 +98,7 @@ class JoinAndCompare(object):
         
         df_row = df[create_mask(df, chromosome, position, reference, alt, cdna_transcript)]
         return df_row
-
+    
     def _get_merged_df(self, dataframes: list[pd.DataFrame]):
         """
         Merge all the dataframes into one. 
@@ -130,12 +130,72 @@ class JoinAndCompare(object):
         # Add a field indicating which transcripts are known to have gaps/misalignment
         merged_df = self._add_gap_and_cigar_field(merged_df, gff_and_uta_exon_gap_info_df)
 
+        merged_df = self._add_cgd_and_annovar_vs_tfx_field(merged_df)
+        
         # Add a field inndicating which accessions are preferred/reported transcripts
         if preferred_transcript_df is not None:
             merged_df = self._add_preferred_transcript_field(merged_df, preferred_transcript_df)
                 
         return merged_df
 
+    def _get_concordance_counts(self, df: pd.DataFrame, fields: list):
+        """
+        Generate concordage table
+        """
+        sources = [NomenclatureTools.CGD.value, NomenclatureTools.TFX.value] # NomenclatureTools.ANNOVAR.value,
+
+        # 1. Build a mask where all sources have valid data for ALL metrics provided
+        # This ensures we aren't comparing a 'c_dot' if the 'p_dot' is missing
+        presence_masks = []
+        for m in fields:
+            m_mask = (df[sources].xs(m, axis=1, level=1).notna() & 
+                      (df[sources].xs(m, axis=1, level=1) != '')).all(axis=1)
+            presence_masks.append(m_mask)
+        
+        # Combine all presence masks (must have data for every metric)
+        final_mask = pd.concat(presence_masks, axis=1).all(axis=1)
+        df_filtered = df[final_mask]
+        
+        # 2. Build the count matrix
+        matrix = pd.DataFrame(index=sources, columns=sources)
+        
+        for s1 in sources:
+            for s2 in sources:
+                # Check for equality across ALL metrics in the list
+                # .all(axis=1) ensures row matches only if c_dot AND p_dot (etc) match
+                matches = (df_filtered[s1][fields] == df_filtered[s2][fields]).all(axis=1).sum()
+                matrix.loc[s1, s2] = matches
+        
+        index_df = df_filtered.index.to_frame(index=False)
+        variant_coords = ['chromosome', 'position', 'reference', 'alt']
+        distinct_variant_count = len(index_df[variant_coords].drop_duplicates())
+        
+        # Return variant count, transcript count, and the matrix 
+        return distinct_variant_count, len(df_filtered), matrix.astype(int)
+        
+    def _generate_concordance_tables(self, df: pd.DataFrame):
+        """
+        Generate concordage tables (aka Co-occurrence Matrices) for CGD, Annovar, and Tfx agreement on c., p., and both
+        """
+        
+        variant_count_c, transcripts_count_c, table_c = self._get_concordance_counts(df, ['c_dot'])
+        print("-" * 50)
+        print(f"c. concordance: Analysis based on {variant_count_c} variants and {transcripts_count_c} transcripts where all sources have c dot.")        
+        print(table_c)
+        print(f"")
+        
+        variant_count_p, transcripts_count_p, table_p = self._get_concordance_counts(df, ['p_dot1'])
+        print("-" * 50)
+        print(f"p. concordance: Analysis based on {variant_count_p} variants and {transcripts_count_p} transcripts where all sources have p dot.")
+        print(table_p)
+        print(f"")
+        
+        variant_count_cp, transcripts_count_cp, table_cp = self._get_concordance_counts(df, ['c_dot', 'p_dot1'])
+        print("-" * 50)
+        print(f"c. and p. concordance: Analysis based on {variant_count_cp} variants and {transcripts_count_cp} transcripts where all sources have c dot and p dot.")
+        print(table_cp)
+        print(f"")
+        
     def _add_preferred_transcript_field(self, merged_df, preferred_transcript_df):
         """
         Add a field with a "1" wherever the cdna_transcript matches in mergrd_df matches a cdna_transcrpt in preferred_tranascript_df 
@@ -178,6 +238,48 @@ class JoinAndCompare(object):
         merged_df[(gap_label, 'is_gap_transcript')] = (has_gff | has_uta).astype(int)
     
         return merged_df
+        
+    def _add_cgd_and_annovar_vs_tfx_field(self, df: pd.DataFrame):
+        """
+        Add a field that indicates which rows have the same on c. and p. for CGD and Annovar but Tfx has a different c. or p.  
+        """
+        sources = [NomenclatureTools.CGD.value, NomenclatureTools.ANNOVAR.value, NomenclatureTools.TFX.value]
+        
+        # 1. Create a mask where all three sources have non-empty/non-null values
+        presence_masks = [
+            (df[(s, 'c_dot')].notna() & (df[(s, 'c_dot')] != '')) & 
+            (df[(s, 'p_dot1')].notna() & (df[(s, 'p_dot1')] != ''))
+            for s in sources
+        ]
+        all_present = reduce(lambda x, y: x & y, presence_masks)
+        
+        # 2. Logic: CGD cdot and pdot  matches Annovar
+        cgd_and_annovar_match = (
+            (df[(NomenclatureTools.CGD.value, 'c_dot')] == df[(NomenclatureTools.ANNOVAR.value, 'c_dot')]) & 
+            (df[(NomenclatureTools.CGD.value, 'p_dot1')] == df[(NomenclatureTools.ANNOVAR.value, 'p_dot1')])
+        )
+        
+        # 3. Logic: TFX matches CGD (and by extension Annovar if cgd_ann_match is True)
+        tfx_match = (
+            (df[(NomenclatureTools.TFX.value, 'c_dot')] == df[(NomenclatureTools.CGD.value, 'c_dot')]) & 
+            (df[(NomenclatureTools.TFX.value, 'p_dot1')] == df[(NomenclatureTools.CGD.value, 'p_dot1')])
+        )
+        
+        # 4. Define Conditions
+        # All match = all present AND (cgd==annovar) AND (tfx matches)
+        cond_all_match = all_present & cgd_and_annovar_match & tfx_match
+
+        # TFX differs = all present AND (cgd==annovar) AND (tfx doesn't match)
+        cond_tfx_outlier = all_present & cgd_and_annovar_match & ~tfx_match
+        
+        # 5. Assign to the multi-index
+        df[('scores', 'cgdAnnovar_vs_tfx')] = np.select(
+            [cond_all_match, cond_tfx_outlier], 
+            [1, 0], 
+            default=-1
+        )
+        
+        return df
         
         
     def _calculate_pairwise_score(self, merged_df: pd.DataFrame, tool_dataframes: list[pd.DataFrame], fields_to_compare: list[str], new_field_name):
@@ -392,7 +494,7 @@ class JoinAndCompare(object):
         )        
         
         final_column_order = index_cols + sorted_nom_cols
-        return flat_df[final_column_order]        
+        return flat_df[final_column_order]
         
     def _add_consensus_conflict_field(self, merged_df: pd.DataFrame, list_a: list[str], list_b: list[str], fields: list[str], new_field_name):
         """
@@ -530,6 +632,8 @@ def main():
     # Compare exon, c., and p. from all datasources. 
     comparison_df = jc.get_comparison_df(dataframes, gff_and_uta_exon_gap_info_df, preferred_transcript_df)
         
+    jc._generate_concordance_tables(comparison_df)
+    
     # Left join all datasets to the variant list. Write out all rows and all fields
     jc.write(args.out, comparison_df)
     

@@ -1,5 +1,5 @@
 '''
-Read CGD export of variants and transcript nomenclature and write out a list of variants 
+Read CGD export of variants and transcript nomenclature (csv) and write out a list of variants (json) 
 
 Created on Jan 18, 2026
 

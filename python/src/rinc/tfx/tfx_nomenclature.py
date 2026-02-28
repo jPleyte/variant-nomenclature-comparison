@@ -31,15 +31,10 @@ class TfxNomenclature(object):
         Create VariantTrancript using a dict of Tfx values
         """
         v = VariantTranscript(j['chromosome'], j['position'], j['reference'], j['alt'], j['cdnaTranscript'])
-        
+
+        v.g_dot = j['sequenceVariant']        
         v.c_dot = j['cdnaNomenclature']
         v.exon = j['exon']
-        
-        if j['sequenceVariant']:            
-            g_dot_part = j['sequenceVariant']        
-            refseq_chromosome = chromosome_map.get_refseq(v.chromosome)
-            v.g_dot = f"{refseq_chromosome}:{g_dot_part}"
-        
         v.gene = j['gene']
         v.genomic_region_type = j['variantType']
         v.p_dot1 = j['proteinNomenclature1']

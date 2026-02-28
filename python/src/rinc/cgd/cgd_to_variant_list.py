@@ -1,10 +1,13 @@
 '''
+Convert sql export from CGD to g. variant list
+    What uses this?   
 Created on Jan 25, 2026
 
 @author: pleyte
 '''
 import argparse
 import pandas as pd
+from rinc.util import chromosome_map
 
 def _parse_args():
     parser = argparse.ArgumentParser(description='Convert csv from sql dump to variant list')
@@ -18,14 +21,16 @@ def _parse_args():
 def main():
     args = _parse_args()
     
-    # Read dataframe and remove d
+    # Read dataframe 
     df = pd.read_csv(args.input).drop_duplicates(subset=['chromosome', 'position_start', 'reference_base', 'variant_base'])
 
     # Create a list of the variants formatted as "chr-pos-ref-alt"
     formatted_variants = (
-        df['chromosome'].astype(str) + '-' + 
-        df['position_start'].astype(str) + '-' + 
-        df['reference_base'] + '-' + 
+        df['chromosome'].astype(str).map(chromosome_map.get_refseq) + 
+        ':' +
+        'g.' +
+        df['position_start'].astype(str) +  
+        df['reference_base'] + '>' + 
         df['variant_base']
     )
 
