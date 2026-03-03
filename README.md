@@ -1,10 +1,17 @@
-# refseq-indel-nomenclature-comparison
+# variant-nomenclature-comparison
 
-This project uses CIGAR strings to identify insertion or deletion alignment differences between hg19 and RefSeq transcript sequences. By simulating variants immediately downstream of these changes, the pipeline generates cDNA and protein nomenclature using both ANNOVAR and the hgvs/UTA Python package. Finally, the outputs are compared to determine if the two methods yield identical nomenclature for the same variant.
+This project uses multipe tools to generates cDNA and protein nomenclature and produces a spreadsheet comparing the values from each. 
+
+## Versions
+
+* Python 3.14.3
+* Nextflow 25.10.4 build 11173
+* UTA uta_20241220
+* SeqRepo 2024-12-20
 
 ## Running the workflow
 
-## Running the workflow in Github Codespaces
+### Running the workflow in Github Codespaces
 
 This repsoitory has a ``.devcontainer`` directory that makes it able to be deployed as a GitHub Codespace. When the Codespace is first launched the ``.devcontainer/setup.sh`` script will install necessary dependencies including the hg19 fasta and annovar databases. 
 
@@ -13,11 +20,10 @@ To run the workflow change to the nextflow directory and launch the worfklow:
 nextflow run .
 ```
 
-By default the workflow queries the UTA database and creates a list of variants. But if you have a list of variants you want to process you can place the the variants in ``/tmp/curated_gaps_and_variants.csv`` and then launch the wokflow with the ``-stub`` parameter. This causes the workflow to skip the first step that generates variants, and to use your list instead.
+### Variant list 
 
-```bash
-nextflow run . -stub
-```
+The workflow depends on a variant list. Each tool identifies transcripts and nomenclature for the variants. When the ``variant_source`` parameter is set to 'tfx' the variant list will be extracted from the variants fround in the output of the Transcript Effects tool.  
+
 
 ## Running the workflow locally 
 
@@ -26,8 +32,13 @@ To run the workflow on your local environment edit the ``nextflow/nextflow.confi
 * Set the ``params.uta_schema`` parameter to the schema in your UTA database
 * Set the env ``ANNOVAR_HOME`` to directory where you installed annovar. 
 
-Launch the workflow specifying the ``mac`` profile
+Example command line for launching the workflow specifying the ``mac`` profile
 
 ```bash
-run main.nf -profile mac
+nextflow run main.nf -profile mac main \ 
+    --variant_source tfx  \
+    --variant_source_file /tmp/transcript_effects/out.json \
+    --generate_variant_validator_batch true \
+    --mutalyzer_nomenclature_file ../data/mutalyzer/mutalyzer_nomenclature.csv \
+    --variant_validator_batch_results ../data/variant_validator/variant_validator_result.tsv
 ```

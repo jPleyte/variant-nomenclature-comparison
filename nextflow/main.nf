@@ -14,7 +14,6 @@ the results to an excel spreadsheet.
 
 // main processes
 include { validateParameters; paramsSummaryLog } from 'plugin/nf-validation'
-include { findGapVariants } from './modules/local/variants/find_gap_variants.nf'
 include { getTfxVariants } from './modules/local/variants/get_tfx_variants.nf'
 include { writeHgvsNomenclatureToCsv} from './modules/local/main/write_hgvs_nomenclature_to_csv.nf'
 include { csvToAvinput } from './modules/local/main/csv_to_avinput.nf'
@@ -79,9 +78,6 @@ workflow {
     def ch_variants
     if (params.variant_source == 'csv') {
         ch_variants = params.variant_source_file
-    } 
-    else if (params.variant_source == 'gap_query') {
-        ch_variants = findGapVariants(uta_schema, fasta_ch)
     }
     else if (params.variant_source == 'tfx') {
         ch_variants = getTfxVariants(params.variant_source_file)
@@ -133,7 +129,7 @@ workflow {
         ch_cgd_nomenclature = writeCgdNomenclatureToCsv(params.cgd_export_df, ch_variants)
     }
 
-    def variant_validator_nomenclature = channel.empty()
+    def ch_variant_validator_nomenclature = channel.empty()
     if (params.variant_validator_batch_results) {
         ch_variant_validator_batch_results = channel.fromPath(params.variant_validator_batch_results, checkIfExists: true)
         ch_variant_validator_nomenclature = writeVariantValidatorNomenclature(ch_variant_validator_batch_results)

@@ -36,9 +36,9 @@ class ExtractUtaExonGapInfo(object):
         If the whole exon matches the cigar string will look like "123=". Everything else indicates a mismatch.
         Returns a dataframe with one row for each accession, and a 'cigar' field that is a concatenated list of all cigar strings for the transcript.  
         """
-        query = """
+        query = f"""
                 SELECT * 
-                  FROM uta_20240523b.tx_exon_aln_v 
+                  FROM {self._uta_schema}.tx_exon_aln_v 
                  WHERE alt_aln_method = 'splign'
                   -- Filter 1: Ensure we only pull hg19 rows for the final result
                   AND alt_ac IN ('NC_000001.10', 'NC_000002.11', 'NC_000003.11', 'NC_000004.11', 
@@ -50,7 +50,7 @@ class ExtractUtaExonGapInfo(object):
                   AND tx_ac IN (
                       -- Subquery: Find transcripts that have a gap ON hg19
                       SELECT DISTINCT tx_ac 
-                        FROM uta_20240523b.tx_exon_aln_v 
+                        FROM {self._uta_schema}.tx_exon_aln_v 
                        WHERE alt_aln_method = 'splign'
                          AND tx_ac LIKE 'NM_%'
                          AND cigar !~ '^[0-9]+=$'
@@ -63,7 +63,7 @@ class ExtractUtaExonGapInfo(object):
                                        'NC_000021.8',  'NC_000022.10', 'NC_000023.10', 'NC_000024.9')
                   )
                 ORDER BY tx_ac, ord;
-            """        
+            """
 
         with UtaDb() as uta_db:
             df = pd.read_sql(query, uta_db._hdp._conn)
