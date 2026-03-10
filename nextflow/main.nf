@@ -8,14 +8,13 @@ the results to an excel spreadsheet.
 - [ ] Delete "writeExonDetail" (around line 164) because exon/gap analysis has been moved to the main spreadsheet.  
 - [ ] The "ch_all_labeled" channel is a mix of all data, but is not currently used. 
 - [ ] Right now VariantValidator is limitd to the rows where cgd and tfx have the same c. value (see writeVariantValidatorBatch). Why not fetch all variant transcripts? 
-- [ ] You remove the filter code but still have a "ch_variant_transcript_filter" channel and paremter that aren't being used.
+- [x] You remove the filter code but still have a "ch_variant_transcript_filter" channel and paremter that aren't being used.
 - [ ] The performAnalysis process pairwise_equality.py script is no longer working so i have commented it out in perform_analysis.nf
 */
 
 // main processes
 include { validateParameters; paramsSummaryLog } from 'plugin/nf-validation'
 include { getTfxVariants } from './modules/local/variants/get_tfx_variants.nf'
-include { writeHgvsNomenclatureToCsv} from './modules/local/main/write_hgvs_nomenclature_to_csv.nf'
 include { csvToAvinput } from './modules/local/main/csv_to_avinput.nf'
 include { runAnnovar } from './modules/local/main/run_annovar.nf'
 include { writeAnnovarNomenclatureToCsv } from './modules/local/main/write_annovar_nomenclature_to_csv.nf'
@@ -63,9 +62,6 @@ workflow {
     } else {
         println "No Variant Transcript Filter provided."
     }
-    // Create the value channel
-    def ch_variant_transcript_filter = channel.value(filter_file_obj)
-
 
     // Parameter validation
     if (params.variant_source_file != null && params.variant_source == 'gap_query') {
@@ -85,13 +81,6 @@ workflow {
     else {
         error "Unknown variant source: ${params.variant_source}"
     }
-
-    // Generate nomenclature using hgvs package. 
-    // Do not generate hgvs nomenclature when input source is 'tfx' but tfx uses the same code.    
-    def ch_hgvs_nomenclature = channel.empty() 
-     if (params.variant_source != 'tfx') {
-        ch_hgvs_nomenclature = writeHgvsNomenclatureToCsv(fasta_ch, ch_variants)
-     }
     
     // Convert variant list to annovar avinput file 
     csvToAvinput(ch_variants)
@@ -105,11 +94,14 @@ workflow {
     // Convert variant list to vcf to be used by SnpEff and VEP
     csvToVcf(ch_variants)
 
-    // Run SnpEfff on vcf 
-    runSnpEff(csvToVcf.out.vcf)
+    // Run SnpEfff on vcf
+    def ch_snpeff_nomenclature = channel.empty() 
+    if(params.enable_snpEff) {
+        runSnpEff(csvToVcf.out.vcf)
 
-    // Extract SnpEff nomenclature and write to new csv
-    def ch_snpeff_nomenclature = writeSnpEffNomenclatureToCsv(runSnpEff.out.snpeff_tsv)
+        // Extract SnpEff nomenclature and write to new csv
+        ch_snpeff_nomenclature = writeSnpEffNomenclatureToCsv(runSnpEff.out.snpeff_tsv)
+    }
     
     // Run VEP onece using coding sequence for reference andusing hg19 for reference 
     runVepRefseq(csvToVcf.out.vcf, params.vep_fasta, 'refseq', vep_sequence_modes.refseq)
@@ -140,8 +132,7 @@ workflow {
         ch_mutalyzer_nomenclature = channel.fromPath(params.mutalyzer_nomenclature_file, checkIfExists: true)
     }
 
-    def ch_all_labeled = ch_hgvs_nomenclature.map { file -> ["hgvs_uta", file] }
-        .mix( ch_annovar_nomenclature.map { file -> ["annovar", file] } )
+    def ch_all_labeled = ch_annovar_nomenclature.map { file -> ["annovar", file] }
         .mix( ch_snpeff_nomenclature.map  { file -> ["snpeff", file] } )
         .mix( ch_vepRefSeq_nomenclature.map { file -> ["vep_refseq", file] } )
         .mix( ch_vepHg19_nomenclature.map   { file -> ["vep_hg19", file] } )
@@ -166,9 +157,8 @@ workflow {
     // error "STOPPING WORKFLOW for debuging"
 
     // Compare hgvs and annovar, join hgvs, annovar, and gaps file into final output
-    joinAndCompare(ch_hgvs_nomenclature.ifEmpty([]),
-                   ch_annovar_nomenclature,
-                   ch_snpeff_nomenclature,
+    joinAndCompare(ch_annovar_nomenclature,
+                   ch_snpeff_nomenclature.ifEmpty([]),
                    ch_vepRefSeq_nomenclature,
                    ch_vepHg19_nomenclature,
                    ch_tfx_nomenclature.ifEmpty([]),

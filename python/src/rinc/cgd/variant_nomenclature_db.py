@@ -161,7 +161,7 @@ def _parse_args():
     parser.add_argument("--version", action="version", version="0.0.1")
     parser.add_argument("--db_file", help="Variant transcript db file to load or create (csv)", required=True)    
     parser.add_argument("--import", dest="import_file", help="SQL dump to import (csv)", required=True)
-    parser.add_argument("--overwrite", action='store_true', help="SQL dump to import (csv)", required=False)
+    parser.add_argument("--overwrite", action='store_true', help="Overwrite existing nomenclature values", required=False)
     args = parser.parse_args()
     return args    
 

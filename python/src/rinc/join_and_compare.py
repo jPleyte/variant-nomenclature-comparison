@@ -15,7 +15,6 @@ import itertools
 import numpy as np
 
 class NomenclatureTools(Enum):
-    HGVS = "hgvs"
     TFX = "tfx"
     ANNOVAR = "annovar"
     SNPEFF = "snpeff"
@@ -71,7 +70,7 @@ class JoinAndCompare(object):
         here so the `removelabel` string is removed from the columns. 
         """
         df = pd.read_csv(csv_file, dtype=str)
-        
+
         index_cols = self._index_cols
         df.set_index(index_cols, inplace=True, drop=False)
 
@@ -130,7 +129,11 @@ class JoinAndCompare(object):
         # Add a field indicating which transcripts are known to have gaps/misalignment
         merged_df = self._add_gap_and_cigar_field(merged_df, gff_and_uta_exon_gap_info_df)
 
+        # Add a cgdAnnovar_vs_tfx field
         merged_df = self._add_cgd_and_annovar_vs_tfx_field(merged_df)
+        
+        # Add a is_variant_tx_gap
+        merged_df = self._add_variant_tx_gap_field(merged_df)
         
         # Add a field inndicating which accessions are preferred/reported transcripts
         if preferred_transcript_df is not None:
@@ -138,6 +141,25 @@ class JoinAndCompare(object):
                 
         return merged_df
 
+    def _add_variant_tx_gap_field(self, df: pd.DataFrame):
+        """
+        Add a field that indicates a variant is associated with a transcript that has a reference-refseq mismatch.
+        This field will be true for all variant-transcripts where the variant is associated with a reference-refseq mismatch even if the cdna_transcript is not the transcript that has the mismatch.  
+        """
+        df[('gap', 'is_variant_tx_gap')] = (
+            df[('gap', 'is_gap_transcript')]
+            .groupby(level=['chromosome', 'position', 'reference', 'alt'])
+            .transform('max')
+        )
+        
+        original_gaps = df[('gap', 'is_gap_transcript')].sum()
+        variant_gaps = df[('gap', 'is_variant_tx_gap')].sum()
+
+        self._logger.info(f"Transcript gaps: {original_gaps}")
+        self._logger.info(f"Total rows marked by variant gap: {variant_gaps}")
+        
+        return df
+        
     def _get_concordance_counts(self, df: pd.DataFrame, fields: list):
         """
         Generate concordage table
@@ -542,7 +564,8 @@ class JoinAndCompare(object):
 
     def write(self, 
               out_file, 
-              comparison_df: pd.DataFrame):
+              comparison_df: pd.DataFrame, 
+              include_raw_sheet: bool = False):
         """
         Write the dataframe with its new comparison fields to file
         #merged_df.columns = [f"{source}_{field}" for source, field in merged_df.columns]
@@ -565,7 +588,9 @@ class JoinAndCompare(object):
             
             self._write_sheet_summary(writer, workbook, flatened_df, 'Summary')            
             self._write_sheet_comparison(writer, workbook, flatened_df, 'Comparison')
-            self._write_sheet_raw(writer, workbook, comparison_df, 'Raw')
+            
+            if include_raw_sheet:
+                self._write_sheet_raw(writer, workbook, comparison_df, 'Raw')
             
 
         self._logger.info(f"Wrote data frame with {comparison_df.shape[0]} rows and {comparison_df.shape[1]} columns to {out_file}")
@@ -573,14 +598,13 @@ class JoinAndCompare(object):
 def _parse_args():
     parser = argparse.ArgumentParser(description='Read Annovar multianno file, extract values and write to new csv')
 
-    parser.add_argument('--hgvs_nomenclature', help='hgvs/uta values (csv)', required=False)
     parser.add_argument('--tfx_nomenclature', help="Optional Transcript Effect/tfx nomenclature (csv)", required=False)
     parser.add_argument('--cgd_nomenclature', help='CGD nomenclature (csv)', required=False)
     parser.add_argument('--variant_validator_nomenclature', help='Variant Validator nomenclature (csv)', required=False)
     parser.add_argument('--mutalyzer_nomenclature', help='Mutalyzer nomenclature (csv)', required=False)
+    parser.add_argument('--snpeff_nomenclature', help='SnpEff nomenclature (csv)', required=False)
     
     parser.add_argument('--annovar_nomenclature', help='Annovar nomenclature (csv)', required=True)    
-    parser.add_argument('--snpeff_nomenclature', help='SnpEff nomenclature (csv)', required=True)    
     parser.add_argument('--vep_refseq_nomenclautre', help='VEP Refseq nomenclature (csv)', required=True)
     parser.add_argument('--vep_hg19_nomenclature', help='Vep hg19 nomenclature (csv)', required=True)
 
@@ -590,6 +614,7 @@ def _parse_args():
     parser.add_argument("--out", help="output file (xlsx)", required=True)
     
     parser.add_argument("--out_parquet", help="Write the MultiIndex dataframe to this output file so it can be used by other scripts (parquet)", required=False)
+    parser.add_argument("--include_raw", action='store_true', help="Include a sheet with the raw data", required=False, default=False)
     
     parser.add_argument("--version", action="version", version="0.0.1")
 
@@ -606,8 +631,6 @@ def main():
     dataframes = []
     
     # Some dataframes are optional
-    if args.hgvs_nomenclature:
-        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.HGVS.value, args.hgvs_nomenclature, 'hu.'))
     if args.tfx_nomenclature:
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.TFX.value, args.tfx_nomenclature))
     if args.cgd_nomenclature:
@@ -616,10 +639,12 @@ def main():
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VARIANT_VALIDATOR.value, args.variant_validator_nomenclature))
     if args.mutalyzer_nomenclature:
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.MUTALYZER.value, args.cgd_nomenclature))
-        
+    if args.snpeff_nomenclature:
+        dataframes.append(jc.get_nomenclature_df(NomenclatureTools.SNPEFF.value, args.snpeff_nomenclature))
+            
     # In the future i will make this optional but for now they're always being generated 
     dataframes.append(jc.get_nomenclature_df(NomenclatureTools.ANNOVAR.value, args.annovar_nomenclature, '.annovar'))    
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.SNPEFF.value, args.snpeff_nomenclature, 'snpeff.'))
+    
     dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_REFSEQ.value, args.vep_refseq_nomenclautre, 'vep.refseq.'))    
     dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_HG19.value, args.vep_hg19_nomenclature, 'vep.hg19.'))
     
@@ -635,7 +660,7 @@ def main():
     jc._generate_concordance_tables(comparison_df)
     
     # Left join all datasets to the variant list. Write out all rows and all fields
-    jc.write(args.out, comparison_df)
+    jc.write(args.out, comparison_df, args.include_raw)
     
 
 if __name__ == '__main__':

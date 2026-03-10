@@ -5,6 +5,11 @@
     "description": "This pipeline uses Nextflow to generate and compare c. and p. nomenclature from multiple sources",
     "type": "object",
     "properties": {
+        "enable_snpEff": {
+            "type": "boolean",
+            "description": "Allows disabling SnpEff. We are considering removing SnpEff, turning it off is the first step."
+        },
+
         "variant_transcript_filter": {
             "type": "string",
             "description": "CSV with list of variant and transcript to filter on"

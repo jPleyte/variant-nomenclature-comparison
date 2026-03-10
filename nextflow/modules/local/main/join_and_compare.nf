@@ -7,8 +7,7 @@ process joinAndCompare {
     publishDir "${params.outdir}", mode: 'symlink'
 
     input:
-    // Nomenclature dataframes
-    path hgvs_nomenclature    
+    // Nomenclature dataframes    
     path annovar_nomenclature
     path snpeff_nomenclature
     path vep_refseq_nomenclautre
@@ -27,22 +26,19 @@ process joinAndCompare {
 
     script:
     def tfx_nomenclature_arg = tfx_nomenclature ? "--tfx_nomenclature $tfx_nomenclature" : ""
-    def hgvs_nomenclature_arg = hgvs_nomenclature ? "--hgvs_nomenclature $hgvs_nomenclature" : ""
     def cgd_nomenclature_arg = cgd_nomenclature ? "--cgd_nomenclature $cgd_nomenclature" : ""
     def vv_nomenclature_arg = variant_validator_nomenclature ? "--variant_validator_nomenclature $variant_validator_nomenclature" : ""
     def mutalyzer_nomenclature_arg = mutalyzer_nomenclature ? "--mutalyzer_nomenclature $mutalyzer_nomenclature" : ""
-    
+    def snpeff_nomenclature_arg = snpeff_nomenclature ? "--snpeff_nomenclature ${snpeff_nomenclature}" : ""
     def preferred_transcripts_arg = preferred_transcripts ? "--preferred_transcripts $preferred_transcripts" : ""
-    
     """
     python -m rinc.join_and_compare                              \
-        ${hgvs_nomenclature_arg}                                 \
         ${tfx_nomenclature_arg}                                  \
         ${cgd_nomenclature_arg}                                  \
         ${vv_nomenclature_arg}                                   \
         ${mutalyzer_nomenclature_arg}                            \
+        ${snpeff_nomenclature_arg}                               \
         --annovar_nomenclature ${annovar_nomenclature}           \
-        --snpeff_nomenclature ${snpeff_nomenclature}             \
         --vep_refseq_nomenclautre ${vep_refseq_nomenclautre}     \
         --vep_hg19_nomenclature ${vep_hg19_nomenclature}         \
         --gff_and_uta_exon_gap_info ${gff_and_uta_exon_gap_info} \

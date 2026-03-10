@@ -4,7 +4,7 @@
 sudo apt-get update
 sudo apt-get install -y samtools perl wget tabix libpq-dev awscli
 
-pip install psycopg2-binary hgvs pysam biopython pandas natsort pyarrow  gffutils matplotlib xlsxwriter
+pip install psycopg2-binary hgvs pysam biopython pandas natsort pyarrow `gffutils matplotlib xlsxwriter
 
 mkdir -p data
 
@@ -51,12 +51,14 @@ EOF
 # cd /workspaces/$(basename $CONTAINER_WORKSPACE_FOLDER)/
 # java -jar snpEff.jar download GRCh37.p13
 
-# Install VEP's dependencies
+# Install VEP's dependencies. 
+# On mac you should install htslib using brew: brew install htslib
 # perlbrew install-cpanm
 # cpanm DBI
 # cpanm DBD::mysql@4.050
 # cpanm Test::Differences Test::Exception Test::Perl::Critic Archive::Zip PadWalker Error Devel::Cycle Role::Tiny::With Module::Build LWP List::MoreUtils
-# cpanm Bio::DB::HTS
+# ~~cpanm Bio::DB::HTS~~
+# perl INSTALL.pl --AUTO a --NO_HTSLIB
 
 echo "You still need to do the following:"
 echo "- Install VEP"
