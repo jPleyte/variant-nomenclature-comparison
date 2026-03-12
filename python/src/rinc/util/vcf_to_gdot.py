@@ -110,7 +110,7 @@ class Indel(HGVSNomenclature):
     def get_hgvs_coord(self) -> str:
         # VCF: 10 TAG > AGC
         # HGVS: g.10delinsGCA
-        if self.allele_size_gap == 1 and self.raw_lref == 1:
+        if self.raw_lref == 1:
             return f"{self.delins_start}delins{self.raw_alt}"
         else:
             return f"{self.delins_start}_{self.delins_end}delins{self.raw_alt}"
@@ -235,7 +235,7 @@ class Deletion(HGVSNomenclature):
             # Multi-base deletion (e.g., pos+1_pos+3 del ATG)
             return f"{self.del_start}_{self.del_end}del"
 
-def get_gdot_plus(chrom: str, pos: int, ref: str, alt: str, pysam_tx: PysamTxEff) -> (str,str):
+def get_gdot_plus(chrom: str, pos: int, ref: str, alt: str, pysam_tx: PysamTxEff) -> tuple[str,str]:
     """
     Returns g_dot and the variant type
     1) Return the full g.dot include chromsome andg. prefix
@@ -250,12 +250,12 @@ def get_gdot_plus(chrom: str, pos: int, ref: str, alt: str, pysam_tx: PysamTxEff
                      }
 
     vrnt_type = HGVSNomenclature(chrom, pos, ref, alt, pysam_tx).get_variant_type()
-    g_dot_part = vrnt_type_map[vrnt_type](chrom, pos, ref, alt, pysam_tx).get_hgvs_coord()
+    gdot_change = vrnt_type_map[vrnt_type](chrom, pos, ref, alt, pysam_tx).get_hgvs_coord()
     refseq_chromosome = chromosome_map.get_refseq(chrom)
     
-    g_dot_full = refseq_chromosome + ':g.' + g_dot_part
+    full_g_dot = refseq_chromosome + ':g.' + gdot_change
     
-    return g_dot_full, vrnt_type
+    return full_g_dot, vrnt_type
     
     
     

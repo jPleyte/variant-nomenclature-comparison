@@ -5,9 +5,17 @@
     "description": "This pipeline uses Nextflow to generate and compare c. and p. nomenclature from multiple sources",
     "type": "object",
     "properties": {
+        "enable_mutalyzer": {
+            "type": "boolean",
+            "description": "Enable/disable Mutalyzer"
+        },
         "enable_snpEff": {
             "type": "boolean",
             "description": "Allows disabling SnpEff. We are considering removing SnpEff, turning it off is the first step."
+        },
+        "enable_variant_validator": {
+            "type": "boolean",
+            "description": "Enable/disable VariantValidator"
         },
 
         "variant_transcript_filter": {

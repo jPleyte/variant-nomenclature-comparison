@@ -9,6 +9,10 @@ This project uses multipe tools to generates cDNA and protein nomenclature and p
 * UTA uta_20241220
 * SeqRepo 2024-12-20
 
+## Dependencies
+
+* vcf-sort from vcftools
+
 ## Running the workflow
 
 ### Running the workflow in Github Codespaces

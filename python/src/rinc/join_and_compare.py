@@ -111,11 +111,47 @@ class JoinAndCompare(object):
 
         return merged_df    
         
+    def _remove_rows_without_cdna_transcript_version(self, merged_df: pd.DataFrame):
+        """
+        Remove rows where the cdna transcript doesn't have a version. CGD should be the only 
+        datasource that has transcripts w/o accession version. 
+        """        
+        df_filtered = merged_df[merged_df.index.get_level_values('cdna_transcript').str.contains('.', regex=False)]
+        self._logger.info(f"Removed {len(merged_df) - len(df_filtered)} rows where transcript accession does not have version")
+        return df_filtered
+    
+    def _remove_rows_without_cgd_and_tfx_datasource_values(self, merged_df: pd.DataFrame, dataframes: list):
+        """
+        Our goal is to validate transcript effects and cgd data. If neither cgd or tfx have informatio for a particular 
+        transcript then we have no use for it. 
+        """
+        cgd_df = next(x_df for x_df in dataframes if x_df.attrs.get('nomenclature_tool') == NomenclatureTools.CGD.value)
+        tfx_df = next(x_df for x_df in dataframes if x_df.attrs.get('nomenclature_tool') == NomenclatureTools.TFX.value)
+        assert merged_df.index.names == cgd_df.index.names == tfx_df.index.names, "all three dataframes are expected to have the same index"
+                
+        cgd_index = cgd_df.index
+        tfx_index = tfx_df.index
+
+        # Combine them (Union). This creates a single index containing every variant from both sources
+        # Using union() is safer than concat because it handles MultiIndex levels correctly
+        allowed_index = cgd_index.union(tfx_index)
+        
+        # Filter the merged_df
+        final_df = merged_df[merged_df.index.isin(allowed_index)]
+        
+        self._logger.info(f"Removed {len(merged_df) - len(final_df)} rows that have neither cgd or tfx values")
+        return final_df
+        
     def get_comparison_df(self, dataframes: list[pd.DataFrame], gff_and_uta_exon_gap_info_df, preferred_transcript_df=None):
         """
         Compare dataframes with each other and return a dataframe with comparison score         
         """
         merged_df = self._get_merged_df(dataframes)
+                
+        # Remove unwanted rows 
+        merged_df = self._remove_rows_without_cgd_and_tfx_datasource_values(merged_df, dataframes)        
+        merged_df = self._remove_rows_without_cdna_transcript_version(merged_df)
+        
         merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['g_dot'], new_field_name='g_dot_concordance')
         merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['c_dot'], new_field_name='c_dot_concordance')
         merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['p_dot1'], new_field_name='p_dot_cordance')
@@ -123,7 +159,7 @@ class JoinAndCompare(object):
         merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['exon', 'c_dot', 'p_dot1'], new_field_name='c+p+exon_concordance')
         merged_df = self._add_vep_refseq_ref_mismatch_field(merged_df, new_field_name='vep_refseq_mismatch')
         
-        # Add a field indicating when cgd&annovar agree but disagree with tfx&vepHg19 on c_dot
+        # Add a field indicating when cgd & annovar agree but disagree with tfx & vepHg19 on c_dot
         merged_df = self._add_consensus_conflict_field(merged_df, ['cgd', 'annovar'], ['tfx', 'vep_hg19'], ['c_dot'], 'ca_vs_tvv_conflict')
         
         # Add a field indicating which transcripts are known to have gaps/misalignment
@@ -320,8 +356,13 @@ class JoinAndCompare(object):
             
             t1_has_fields = all((t1, f) in merged_df.columns for f in fields_to_compare)
             t2_has_fields = all((t2, f) in merged_df.columns for f in fields_to_compare)
-            if not (t1_has_fields and t2_has_fields):
-                self._logger.info(f"Unable to calculate pairwise score of {fields_to_compare} because {t1} or {t2} does not have that one of the fields.")
+            
+            # If the datasource doesn't provide a field we can't compare it (eg CGD does not have a g_dot)
+            if not t1_has_fields:                
+                self._logger.info(f"Unable to calculate pairwise score of {fields_to_compare} because {t1} does not have that one of the fields")                
+                continue
+            elif not t2_has_fields:
+                self._logger.info(f"Unable to calculate pairwise score of {fields_to_compare} because {t2} does not have that one of the fields")                
                 continue
                  
             # 1. Determine if BOTH tools have data for ALL fields in the list

@@ -39,7 +39,6 @@ class CgdNomenclature(object):
         Return cgd transcripts for a variant 
         """
         return self._cgd_db.get_variant_transcripts(v.chromosome, v.position, v.reference, v.alt)
-
     
     def _get_cgd_to_variant_transcript(self, row):
         """
@@ -57,6 +56,7 @@ class CgdNomenclature(object):
         vt.protein_transcript = None if pd.isna(row['protein_transcript']) else row['protein_transcript']
         vt.protein_variant_type = None if pd.isna(row['protein_variant_type']) else row['protein_variant_type']
         vt.additional_fields['splicing'] = None if pd.isna(row['splice_site']) else 'splicing'
+        vt.additional_fields['genomic_variant_id'] = None if pd.isna(row['genomic_variant']) else row['genomic_variant']
         return vt
         
     def get_variant_transcripts(self, variants: list[VariantTranscript]):
@@ -80,7 +80,7 @@ class CgdNomenclature(object):
         """
         # variant_helper.write_variant_transcripts(out_filename, variant_transcripts, [], 'cgd')
         key_headers = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript' ] 
-        nomenclature_headers = ['c_dot', 'exon', 'gene', 'p_dot1', 'p_dot3', 'protein_transcript', 'protein_variant_type', 'splicing']
+        nomenclature_headers = ['c_dot', 'exon', 'gene', 'p_dot1', 'p_dot3', 'protein_transcript', 'protein_variant_type', 'splicing', 'genomic_variant_id']
         all_headers = key_headers + nomenclature_headers 
     
         rows = 0
@@ -102,7 +102,8 @@ class CgdNomenclature(object):
                        v.p_dot3,
                        v.protein_transcript,
                        v.protein_variant_type,
-                       v.additional_fields['splicing']]
+                       v.additional_fields['splicing'],
+                       v.additional_fields['genomic_variant_id']]
                 
                 writer.writerow(row)
         

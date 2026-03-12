@@ -81,7 +81,8 @@ workflow {
     else {
         error "Unknown variant source: ${params.variant_source}"
     }
-    
+
+	/* Annovar */     
     // Convert variant list to annovar avinput file 
     csvToAvinput(ch_variants)
 
@@ -102,34 +103,44 @@ workflow {
         // Extract SnpEff nomenclature and write to new csv
         ch_snpeff_nomenclature = writeSnpEffNomenclatureToCsv(runSnpEff.out.snpeff_tsv)
     }
-    
+
+    /* VEP */     
     // Run VEP onece using coding sequence for reference andusing hg19 for reference 
     runVepRefseq(csvToVcf.out.vcf, params.vep_fasta, 'refseq', vep_sequence_modes.refseq)
     runVepHg19(csvToVcf.out.vcf, params.vep_fasta, 'hg19', vep_sequence_modes.reference)
-
+    
     // extract VEP nomenclature and write to new csv
     def ch_vepRefSeq_nomenclature = writeVepRefseqNomenclatureToCsv(runVepRefseq.out.vep_output, 'refseq')
     def ch_vepHg19_nomenclature = writeVepHg19NomenclatureToCsv(runVepHg19.out.vep_output, 'hg19')
     
+    /* Transcript Effects */ 
     def ch_tfx_nomenclature = channel.empty()
     if (params.variant_source == 'tfx') {
         ch_tfx_nomenclature = writeTfxNomenclatureToCsv(fasta_ch, params.variant_source_file)
     }
 
+    /* CGD */ 
     def ch_cgd_nomenclature = channel.empty()
     if (params.cgd_export_df != null) {
         ch_cgd_nomenclature = writeCgdNomenclatureToCsv(params.cgd_export_df, ch_variants)
     }
 
+    /* Variant Validator */
     def ch_variant_validator_nomenclature = channel.empty()
-    if (params.variant_validator_batch_results) {
-        ch_variant_validator_batch_results = channel.fromPath(params.variant_validator_batch_results, checkIfExists: true)
-        ch_variant_validator_nomenclature = writeVariantValidatorNomenclature(ch_variant_validator_batch_results)
+    if (params.enable_variant_validator) {
+        if (params.variant_validator_batch_results) {
+            ch_variant_validator_batch_results = channel.fromPath(params.variant_validator_batch_results, checkIfExists: true)
+            ch_variant_validator_nomenclature = writeVariantValidatorNomenclature(ch_variant_validator_batch_results)
+        }
     }
 
+    /* Mutalyzer */ 
     def ch_mutalyzer_nomenclature = channel.empty()
-    if (params.mutalyzer_nomenclature_file) {
-        ch_mutalyzer_nomenclature = channel.fromPath(params.mutalyzer_nomenclature_file, checkIfExists: true)
+    if (params.enable_mutalyzer) {
+        // Run 
+        if (params.mutalyzer_nomenclature_file) {
+            ch_mutalyzer_nomenclature = channel.fromPath(params.mutalyzer_nomenclature_file, checkIfExists: true)
+        }
     }
 
     def ch_all_labeled = ch_annovar_nomenclature.map { file -> ["annovar", file] }

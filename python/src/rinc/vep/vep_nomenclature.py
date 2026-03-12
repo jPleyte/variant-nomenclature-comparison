@@ -119,7 +119,7 @@ class VepNomenclature(object):
             exonic_terms = [ 'missense', 'synonymous', 'stop_gained', 'stop_lost', 
                             'frameshift', 'inframe_insertion', 'inframe_deletion', 
                             'coding_sequence_variant', 'protein_altering_variant', 
-                            'start_lost' ]
+                            'start_lost', 'stop_retained_variant' ]
             
             if any(term in cons for term in exonic_terms):
                 return 'exon'
@@ -179,10 +179,13 @@ class VepNomenclature(object):
         if 'inframe_deletion' in cons: 
             return 'In-frame'
         
-        if 'missense' in cons: 
+        if 'missense' in cons:
             return 'Missense'
         
         if 'synonymous' in cons: 
+            return 'Synonymous'
+        
+        if cons == 'stop_retained_variant':
             return 'Synonymous'
         
         # 4. MNV (Multi-nucleotide variant)
