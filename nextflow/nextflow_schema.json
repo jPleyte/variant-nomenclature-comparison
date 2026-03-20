@@ -9,7 +9,7 @@
             "type": "boolean",
             "description": "Enable/disable Mutalyzer"
         },
-        "enable_snpEff": {
+        "enable_snpeff": {
             "type": "boolean",
             "description": "Allows disabling SnpEff. We are considering removing SnpEff, turning it off is the first step."
         },

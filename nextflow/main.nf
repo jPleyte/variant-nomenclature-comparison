@@ -97,7 +97,7 @@ workflow {
 
     // Run SnpEfff on vcf
     def ch_snpeff_nomenclature = channel.empty() 
-    if(params.enable_snpEff) {
+    if(params.enable_snpeff) {
         runSnpEff(csvToVcf.out.vcf)
 
         // Extract SnpEff nomenclature and write to new csv
@@ -128,10 +128,8 @@ workflow {
     /* Variant Validator */
     def ch_variant_validator_nomenclature = channel.empty()
     if (params.enable_variant_validator) {
-        if (params.variant_validator_batch_results) {
-            ch_variant_validator_batch_results = channel.fromPath(params.variant_validator_batch_results, checkIfExists: true)
-            ch_variant_validator_nomenclature = writeVariantValidatorNomenclature(ch_variant_validator_batch_results)
-        }
+        ch_variant_validator_batch_results = channel.fromPath(params.variant_validator_batch_results, checkIfExists: true)
+        ch_variant_validator_nomenclature = writeVariantValidatorNomenclature(ch_variant_validator_batch_results)
     }
 
     /* Mutalyzer */ 

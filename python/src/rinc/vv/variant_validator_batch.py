@@ -1,5 +1,11 @@
 '''
-Find the variants and transcripts where CGD and Tfx have the same c. and write out variant and transcript lists for submission to variantvalidator.org
+Find the variants and transcripts where CGD and Tfx have the same c. and write 
+out variant and transcript lists for submission to variantvalidator.org
+
+Why two separate lists? When you submit the variant list to vv you can optionally
+provide a list of transcripts you want to limit the results to. We limit the 
+transcripts to just those that are known to CGD and Transcript Effects. 
+
 Created on Feb 5, 2026
 
 @author: pleyte

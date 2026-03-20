@@ -15,11 +15,10 @@ process writeVariantValidatorBatch {
 
     script:
     """
-    echo "jdebug"
     python -m rinc.vv.variant_validator_batch           \
         --cgd_nomenclature ${cgd_nomenclature}          \
         --tfx_nomenclature ${tfx_nomenclature}          \
         --variant_output variant_validator_variants.txt \
-        --transcript_output variant_validator_transcripts.txt        
+        --transcript_output variant_validator_transcripts.txt
     """
 }    

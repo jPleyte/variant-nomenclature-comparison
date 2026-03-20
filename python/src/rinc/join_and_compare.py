@@ -24,6 +24,7 @@ class NomenclatureTools(Enum):
     VARIANT_VALIDATOR = "vv"
     MUTALYZER = "mutalyzer"
     REFERENCE_GAP = "gap" # Not actually a nomenclature tool
+    PREFERRED_TRANSCRIPT = "cgd_preferred_transcript" # Not actually a nomenclature tool
 
 class JoinAndCompare(object):
     '''
@@ -141,13 +142,35 @@ class JoinAndCompare(object):
         
         self._logger.info(f"Removed {len(merged_df) - len(final_df)} rows that have neither cgd or tfx values")
         return final_df
+    
+    def _fill_in_missing_genomic_variant_id(self, df):
+        '''
+        The variant transcripts from CGD have a genomic_variant_id. Transcripts that aren't known to cgd will have a blank genomic_variant_id.
+        This function fills in the blank genomic_variant_id.
+        '''
+        if ('cgd', 'genomic_variant_id') not in df.columns:
+            raise ValueError("cgd and genomic_variant_id are not in this dataframe")
+
+        gv_id_col = ('cgd', 'genomic_variant_id')
+        variant_levels = ['chromosome', 'position', 'reference', 'alt']
+        
+        # Group by the variant levels and use transform to propagate the ID
+        # ffill (forward fill) and bfill (backward fill) inside the group 
+        # ensures the ID spreads to all rows regardless of where it started.
+        df[gv_id_col] = (df.groupby(level=variant_levels)[[gv_id_col]].transform(lambda x: x.ffill().bfill()))
+        
+        # Optional: Verify how many IDs were successfully recovered
+        total_rows = len(df)
+        remaining_nan = df[gv_id_col].isna().sum()
+        self._logger.info(f"Genomic variant id fill complete. {total_rows - remaining_nan} rows now have an ID. {remaining_nan} rows still missing an ID (no match found in CGD)")
+        return df
         
     def get_comparison_df(self, dataframes: list[pd.DataFrame], gff_and_uta_exon_gap_info_df, preferred_transcript_df=None):
         """
         Compare dataframes with each other and return a dataframe with comparison score         
         """
         merged_df = self._get_merged_df(dataframes)
-                
+                            
         # Remove unwanted rows 
         merged_df = self._remove_rows_without_cgd_and_tfx_datasource_values(merged_df, dataframes)        
         merged_df = self._remove_rows_without_cdna_transcript_version(merged_df)
@@ -159,8 +182,11 @@ class JoinAndCompare(object):
         merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['exon', 'c_dot', 'p_dot1'], new_field_name='c+p+exon_concordance')
         merged_df = self._add_vep_refseq_ref_mismatch_field(merged_df, new_field_name='vep_refseq_mismatch')
         
+        # Fill in teh genomic_variant_id field 
+        merged_df = self._fill_in_missing_genomic_variant_id(merged_df)
+        
         # Add a field indicating when cgd & annovar agree but disagree with tfx & vepHg19 on c_dot
-        merged_df = self._add_consensus_conflict_field(merged_df, ['cgd', 'annovar'], ['tfx', 'vep_hg19'], ['c_dot'], 'ca_vs_tvv_conflict')
+        merged_df = self._add_consensus_conflict_field(merged_df, ['cgd', 'annovar'], ['tfx', 'vep_hg19'], ['c_dot'], 'ca_vs_tv_conflict')
         
         # Add a field indicating which transcripts are known to have gaps/misalignment
         merged_df = self._add_gap_and_cigar_field(merged_df, gff_and_uta_exon_gap_info_df)
@@ -233,7 +259,7 @@ class JoinAndCompare(object):
         
     def _generate_concordance_tables(self, df: pd.DataFrame):
         """
-        Generate concordage tables (aka Co-occurrence Matrices) for CGD, Annovar, and Tfx agreement on c., p., and both
+        Generate concordage tables (aka Co-occurrence Matrices) for CGD and Tfx agreement on c., p., and both
         """
         
         variant_count_c, transcripts_count_c, table_c = self._get_concordance_counts(df, ['c_dot'])
@@ -693,7 +719,7 @@ def main():
     gff_and_uta_exon_gap_info_df = jc.get_info_df(args.gff_and_uta_exon_gap_info, NomenclatureTools.REFERENCE_GAP.value)
     
     # Transcripts that have been reported in CGD
-    preferred_transcript_df = jc.get_info_df(args.preferred_transcripts, NomenclatureTools.CGD.value)
+    preferred_transcript_df = jc.get_info_df(args.preferred_transcripts, NomenclatureTools.PREFERRED_TRANSCRIPT.value)
     
     # Compare exon, c., and p. from all datasources. 
     comparison_df = jc.get_comparison_df(dataframes, gff_and_uta_exon_gap_info_df, preferred_transcript_df)

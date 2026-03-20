@@ -16,6 +16,8 @@ process csvToVcf {
     """
     python -m rinc.etl.csv_to_vcf \
            --in ${variant_csv} \
-           --out variants.vcf
+           --out variants_unsorted.vcf
+    
+    vcf-sort variants_unsorted.vcf > variants.vcf
     """
 }

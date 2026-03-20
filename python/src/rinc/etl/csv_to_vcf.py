@@ -7,14 +7,51 @@ Created on Jan 9, 2026
 import argparse
 import csv
 import logging.config
-import pysam 
+import pysam
 
+import functools
 from rinc.util.log_config import LogConfig
 from rinc.util import chromosome_map
 
-
 VERSION = '0.0.1'
 
+@functools.total_ordering
+class SimpleVariant:
+    # Official genomic order for hg19/hg38
+    _CHROM_ORDER = {str(i): i for i in range(1, 23)}
+    _CHROM_ORDER.update({f"chr{i}": i for i in range(1, 23)})
+    _CHROM_ORDER.update({"X": 23, "chrX": 23, "Y": 24, "chrY": 24, "MT": 25, "M": 25, "chrM": 25})
+
+    def __init__(self, chromosome, position, reference, alt):
+        self.chromosome = str(chromosome).replace('chr', '')
+        self.position = int(position)
+        self.reference = str(reference).upper()
+        self.alt = str(alt).upper()
+
+    def _sort_key(self):
+        """Internal helper to return a (Rank, Position) tuple."""
+        # Use 999 as a fallback for unknown scaffolds/contigs
+        rank = self._CHROM_ORDER.get(self.chromosome, 999)
+        return (rank, self.position, self.reference, self.alt)
+
+    def __hash__(self):
+        # Hash the tuple of all fields to ensure uniqueness in a set
+        return hash((self.chromosome, self.position, self.reference, self.alt))
+
+    def __eq__(self, other):
+        if not isinstance(other, SimpleVariant):
+            return NotImplemented
+        return (self.chromosome, self.position, self.reference, self.alt) == \
+               (other.chromosome, other.position, other.reference, other.alt)
+
+    def __lt__(self, other):
+        if not isinstance(other, SimpleVariant):
+            return NotImplemented
+        return self._sort_key() < other._sort_key()
+
+    def __repr__(self):
+        return f"SimpleVariant({self.chromosome}:{self.position} {self.reference}>{self.alt})"
+    
 class CsvToVcf(object):
     '''
     classdocs
@@ -31,19 +68,14 @@ class CsvToVcf(object):
         """
         Read the csv and return list of variants 
         """         
-        variants = {}
+        variant_set = set()
         
         with open(in_file_csv, mode='r', newline='', encoding='utf-8') as csvfile:
             for row in csv.DictReader(csvfile):
-                chromosome = row['chromosome']
-                position = row['position']
-                reference = row['reference']
-                alt = row['alt']
-                key = f"{chromosome}-{position}-{reference}-{alt}"
-                if key not in variants:
-                    variants[key] = row
-        
-        return variants.values()
+                v = SimpleVariant(row['chromosome'], row['position'], row['reference'], row['alt'])
+                variant_set.add(v)
+                
+        return list(variant_set)
     
     def write(self, variants: list, out_file_vcf):
         """
@@ -59,16 +91,16 @@ class CsvToVcf(object):
         with pysam.VariantFile(out_file_vcf, "w", header=header) as vcf_out:
             for x in variants:
                 # pysam expects zero based position, and then adds one
-                start_pos = int(x['position']) - 1
+                start_pos = x.position - 1
                 rec = vcf_out.new_record(
-                    contig=x['chromosome'].replace('chr', ''),
+                    contig=x.chromosome,
                     start=start_pos, 
-                    stop=start_pos + len(x['reference']),
-                    alleles=(x['reference'], x['alt']),
+                    stop=start_pos + len(x.reference),
+                    alleles=(x.reference, x.alt),
                     id=".",
                     qual=None,
                     filter="PASS")
-            
+
                 vcf_out.write(rec)
 
 def _parse_args():
@@ -97,8 +129,11 @@ def main():
 
     c2v = CsvToVcf()
     variants = c2v.read(args.input)
-
-    c2v.write(variants, args.output)
+    
+    # This sort is not effective
+    sorted_variants = sorted(variants)
+    
+    c2v.write(sorted_variants, args.output)
 
     logger.info(f"Wrote {len(variants)} variants to {args.output}")
 

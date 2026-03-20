@@ -88,8 +88,8 @@ class ProcessSnpeff(object):
     def write(self, out_filename, variant_transcripts: list[VariantTranscript]):
         headers = ['chromosome', 'position', 'reference', 'alt',
                    'cdna_transcript',
-                   'snpeff.exon', 'snpeff.gene', 'snpeff.genomic_region_type',
-                   'snpeff.c_dot', 'snpeff.p_dot1', 'snpeff.p_dot3',
+                   'exon', 'gene', 'genomic_region_type',
+                   'c_dot', 'p_dot1', 'p_dot3',
                    'ann_effect_raw', 'ann_biotype_raw']
         
         with open(out_filename, 'w', newline='') as output:
@@ -105,8 +105,6 @@ class ProcessSnpeff(object):
                                  v.additional_fields['ann_biotype_raw']])
             
         self._logger.info(f"Wrote {len(variant_transcripts)} variant transcripts to {out_filename}")
-        
-
         
 def _parse_args():
     parser = argparse.ArgumentParser(description='Read SnpEff tsv file, extract values and write to new csv')
