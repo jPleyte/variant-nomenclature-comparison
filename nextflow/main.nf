@@ -90,7 +90,9 @@ workflow {
     runAnnovar(csvToAvinput.out.annovar_avinput)
 
     // Extract annovar nomenclature and write to new csv
-    def ch_annovar_nomenclature = writeAnnovarNomenclatureToCsv(runAnnovar.out.multianno)
+    def ch_annovar_nomenclature = writeAnnovarNomenclatureToCsv(runAnnovar.out.multianno, 
+                                                                runAnnovar.out.refseq_variant_function, 
+                                                                runAnnovar.out.ccds_variant_function)
 
     // Convert variant list to vcf to be used by SnpEff and VEP
     csvToVcf(ch_variants)

@@ -1,7 +1,16 @@
 '''
-The transcript details from an annovar multianno file and write results to a csv having just one transcript per line.  
+Parse transcript details from an Annovar multianno file and write results to a csv.
 
-it is assumed that Annovar was run like this:
+A problem with Annovar's multianno format is that multiple transcripts are placed 
+in the same row and it is not possible to determine which values from the "Func" 
+column's list of functional classifications (eg, exonic, intronic, splicing) are
+mean to be assigned to which transcript. This script accepts one or more "--annovar_variant_function"
+paramters which are used to assocaite functional classification with transcript. 
+  
+
+it is assumed that Annovar was run using table_annovar.pl with the parameters below. 
+The ``--remove`` parameter should not be used because this script parses both the 
+multianno and variant_function files. 
 ```bash
 $ANNOVAR_HOME/table_annovar.pl annovar.avinput \
     $ANNOVAR_HOME/humandb/ \
@@ -11,8 +20,7 @@ $ANNOVAR_HOME/table_annovar.pl annovar.avinput \
     --operation g,g \
     --nastring . \
     --polish \
-    --remove \
-    --argument '--splicing_threshold 5 --exonicsplicing --transcript_function --separate,--splicing_threshold 5 --exonicsplicing --transcript_function --separate'
+    --argument '--splicing_threshold 5 --exonicsplicing --transcript_function _update_variant_function,--splicing_threshold 5 --exonicsplicing --transcript_function --separate'
 ```
 
 And that the resulting annovar.hg19_multianno.txt has the following fields:
@@ -36,18 +44,22 @@ import logging.config
 from rinc.util.log_config import LogConfig
 from rinc.variant_transcript import VariantTranscript
 import re
+from rinc.annovar.parse_annovar_variant_function import ParseAnnovarVariantFunction
+from rinc.annovar import annovar_util
+
 
 class AnnovarMultianno(object):
     '''
     classdocs
     '''
-    def __init__(self):
+    def __init__(self, variant_transcript_annotations: dict):
         '''
         Constructor
         '''
         self._logger = logging.getLogger(__name__)
+        self._variant_transcript_annotations = variant_transcript_annotations
     
-    def get_variant_transcripts(self, annovar_multianno_file):
+    def get_variant_transcripts(self, annovar_multianno_file: str):
         """
         Reach each line of Annovar's crazy multianno tsv and extract each refseq and ccds transcript
         """
@@ -63,9 +75,9 @@ class AnnovarMultianno(object):
                                                                 row['GeneDetail.refGeneWithVer'], 
                                                                 row['ExonicFunc.refGeneWithVer'], 
                                                                 row['AAChange.refGeneWithVer'])
-                                
+
                 variant_transcripts.extend(refseq_transcripts)
-                
+
                 # Extract ccds transcripts 
                 ccds_transcripts = self._parse_primary_blocks(row['Chr'], row['Start'], row['Ref'], row['Alt'], 
                                                               row['Func.ccdsGene'], 
@@ -73,8 +85,9 @@ class AnnovarMultianno(object):
                                                               row['GeneDetail.ccdsGene'], 
                                                               row['ExonicFunc.ccdsGene'], 
                                                               row['AAChange.ccdsGene'])
+
                 variant_transcripts.extend(ccds_transcripts)                
-                
+
         return variant_transcripts
     
     def _parse_primary_blocks(self, chromosome, start, ref, alt, 
@@ -87,14 +100,12 @@ class AnnovarMultianno(object):
         Split the annovar fields at the top-most level using ';' and parse out the variant transcript definitions 
         """        
         variant_transcripts = []
-        
-        is_splice_site = 'splicing' if 'splicing' in multianno_func else None
-        
+       
         # Parse out all the non-coding transcripts
         non_coding_changes = []
         if multianno_gene_detail != '.': 
             for x in multianno_gene_detail.split(';'):
-                results = self._parse_non_coding_region_changes(chromosome, start, ref, alt, is_splice_site, x)
+                results = self._parse_non_coding_region_changes(chromosome, start, ref, alt, x)
                 if results:
                     non_coding_changes.extend(results)
                  
@@ -104,7 +115,7 @@ class AnnovarMultianno(object):
         coding_changes = []
         if multianno_aa_change != '.':
             for x in multianno_aa_change.split(';'):
-                results = self._parse_coding_region_changes(chromosome, start, ref, alt, is_splice_site, multianno_exonic_func, x)
+                results = self._parse_coding_region_changes(chromosome, start, ref, alt, multianno_exonic_func, x)
                 if results:
                     coding_changes.extend(results)
         
@@ -112,19 +123,19 @@ class AnnovarMultianno(object):
                 
         return variant_transcripts
             
-    def _parse_non_coding_region_changes(self, chromosome, start, ref, alt, is_splice_site, gene_detail):
+    def _parse_non_coding_region_changes(self, chromosome, start, ref, alt, gene_detail):
         """
         Parse the comma delimited annovar GeneDetail field for the c. and transcript that do not affect the protein  
         """
         non_coding_change_transcripts = [] 
         for x in gene_detail.split(","):
-            transcript = self._get_non_coding_transcript(chromosome, start, ref, alt, is_splice_site, x)
+            transcript = self._get_non_coding_transcript(chromosome, start, ref, alt, x)
             if transcript:
                 non_coding_change_transcripts.append(transcript)
         
         return non_coding_change_transcripts
 
-    def _get_non_coding_transcript(self, chromosome, start, ref, alt, is_splice_site, gene_detail):
+    def _get_non_coding_transcript(self, chromosome, start, ref, alt, gene_detail):
         """
         Parse transcript, c. and nearest exon out of the gene_detail field and return a VariantTranscript
         - . 
@@ -153,25 +164,25 @@ class AnnovarMultianno(object):
             v = VariantTranscript(chromosome, start, ref, alt, accession)
             v.c_dot = self._get_normalized_c_dot(c_dot)
             v.exon = exon
-            v.additional_fields['splicing'] = is_splice_site
+            self._update_variant_function(v)            
             return v
         else:
             return None
     
-    def _parse_coding_region_changes(self, chromosome, start, ref, alt, is_splice_site, exonic_func, aa_change):
+    def _parse_coding_region_changes(self, chromosome, start, ref, alt, exonic_func, aa_change):
         """
         Parse the comma-delimited annovar field AAChange for the coding changes 
         """
         coding_change_transcripts = []
          
         for x in aa_change.split(","):
-            transcript = self._get_coding_transcript(chromosome, start, ref, alt, is_splice_site, exonic_func, x)
+            transcript = self._get_coding_transcript(chromosome, start, ref, alt, exonic_func, x)
             if transcript:
                 coding_change_transcripts.append(transcript)
         
         return coding_change_transcripts
 
-    def _get_coding_transcript(self, chromosome: str, start: str, ref: str, alt: str, is_splice_site: str, exonic_func: str, aa_change: str):
+    def _get_coding_transcript(self, chromosome: str, start: str, ref: str, alt: str, exonic_func: str, aa_change: str):
         """
         Parse transcript, c., p. and nearest exon out of the AAChange field and return a VariantTranscript
         Usually has p. but sometimes doesn't 
@@ -198,12 +209,27 @@ class AnnovarMultianno(object):
         v.gene = gene
         v.p_dot1 = self._get_normalized_p_dot1(p_dot)        
         v.protein_variant_type = exonic_func
-        
-        v.additional_fields['splicing'] = is_splice_site
         v.additional_fields['p_raw_dot1'] = p_dot
+        self._update_variant_function(v)        
         
         return v
 
+    def _update_variant_function(self, vt: VariantTranscript):
+        '''
+        Update the VariantTranscript with information from the variant_function file 
+        '''
+        variant_transcript_annotation = annovar_util.get_variant_transcript_annotation(vt.chromosome, 
+                                                                                       vt.position, 
+                                                                                       vt.reference, 
+                                                                                       vt.alt,
+                                                                                       vt.cdna_transcript, 
+                                                                                       self._variant_transcript_annotations)
+
+        if variant_transcript_annotation:
+            vt.genomic_region_type = annovar_util.get_variant_function(variant_transcript_annotation)
+            vt.additional_fields['splicing'] = annovar_util.get_is_splicing(variant_transcript_annotation)
+        
+        
     def _get_normalized_p_dot1(self, p_dot_raw: str) -> str:
         """
         Normalize annovar's p.
@@ -247,11 +273,9 @@ class AnnovarMultianno(object):
         Doesn't include g_dot or proteni transcript because annovar doesn't have them
         """
         key_headers = ['chromosome', 'position', 'reference', 'alt', 'cdna_transcript' ] 
-        nomenclature_headers = ['c_dot', 'exon', 'gene', 'p_dot1', 'protein_variant_type', 'splicing', 'p_raw_dot1']
+        nomenclature_headers = ['c_dot', 'exon', 'gene', 'p_dot1', 'protein_variant_type', 'genomic_region_type', 'splicing', 'p_raw_dot1']
     
-        # Caller can spcify that columns not be included (eg Annovar never has p_dot3 or protein transcript)
-        suffixed_headers = [x + "." + 'annovar' for x in nomenclature_headers]
-        all_headers = key_headers + suffixed_headers 
+        all_headers = key_headers + nomenclature_headers 
     
         rows = 0
         with open(output_file, 'w', newline='', encoding='utf-8') as f:
@@ -270,7 +294,8 @@ class AnnovarMultianno(object):
                        v.gene,
                        v.p_dot1,
                        v.protein_variant_type,
-                       v.additional_fields['splicing'],
+                       v.genomic_region_type,
+                       'splicing' if v.additional_fields.get('splicing') else None,
                        v.additional_fields['p_raw_dot1'] if 'p_raw_dot1' in v.additional_fields else None 
                        ]
 
@@ -285,6 +310,11 @@ def _parse_args():
                         help='Multianno output from annovar (tsv)',
                         required=True)
 
+    parser.add_argument('--annovar_variant_function',
+                        help='Annovar variant_function file (tsv)',
+                        action="append",
+                        required=True)
+
     parser.add_argument("--out", help="output file (csv)", required=True)
 
     parser.add_argument("--version", action="version", version="0.0.1")
@@ -296,8 +326,12 @@ def main():
 
     args = _parse_args()
 
-    am = AnnovarMultianno()
-    
+    # Use variant_function file to get a list of variant-transcripts and their variant function (intronic, exonic, etc) and whether it is at a splice site
+    pavf = ParseAnnovarVariantFunction()
+    variant_transcript_annotations = pavf.get_variant_transcript_annotations(args.annovar_variant_function)
+
+    # Read additiona variant-transcript information from the multianno file and combine it with values from the variant_function file    
+    am = AnnovarMultianno(variant_transcript_annotations)
     variant_transcripts = am.get_variant_transcripts(args.annovar_multianno)
 
     am.write(args.out, variant_transcripts)

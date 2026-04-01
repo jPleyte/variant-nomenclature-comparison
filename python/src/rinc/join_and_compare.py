@@ -173,6 +173,10 @@ class JoinAndCompare(object):
                             
         # Remove unwanted rows 
         merged_df = self._remove_rows_without_cgd_and_tfx_datasource_values(merged_df, dataframes)        
+        
+        # Fill in teh genomic_variant_id field. Needs to be done before calling _fill_in_missing_genomic_variant_id
+        merged_df = self._fill_in_missing_genomic_variant_id(merged_df)
+        
         merged_df = self._remove_rows_without_cdna_transcript_version(merged_df)
         
         merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['g_dot'], new_field_name='g_dot_concordance')
@@ -182,8 +186,7 @@ class JoinAndCompare(object):
         merged_df = self._calculate_pairwise_score(merged_df, dataframes, fields_to_compare=['exon', 'c_dot', 'p_dot1'], new_field_name='c+p+exon_concordance')
         merged_df = self._add_vep_refseq_ref_mismatch_field(merged_df, new_field_name='vep_refseq_mismatch')
         
-        # Fill in teh genomic_variant_id field 
-        merged_df = self._fill_in_missing_genomic_variant_id(merged_df)
+        
         
         # Add a field indicating when cgd & annovar agree but disagree with tfx & vepHg19 on c_dot
         merged_df = self._add_consensus_conflict_field(merged_df, ['cgd', 'annovar'], ['tfx', 'vep_hg19'], ['c_dot'], 'ca_vs_tv_conflict')
@@ -708,9 +711,9 @@ def main():
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.MUTALYZER.value, args.cgd_nomenclature))
     if args.snpeff_nomenclature:
         dataframes.append(jc.get_nomenclature_df(NomenclatureTools.SNPEFF.value, args.snpeff_nomenclature))
-            
+
     # In the future i will make this optional but for now they're always being generated 
-    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.ANNOVAR.value, args.annovar_nomenclature, '.annovar'))    
+    dataframes.append(jc.get_nomenclature_df(NomenclatureTools.ANNOVAR.value, args.annovar_nomenclature))    
     
     dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_REFSEQ.value, args.vep_refseq_nomenclautre, 'vep.refseq.'))    
     dataframes.append(jc.get_nomenclature_df(NomenclatureTools.VEP_HG19.value, args.vep_hg19_nomenclature, 'vep.hg19.'))
